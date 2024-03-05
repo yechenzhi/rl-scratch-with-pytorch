@@ -1,4 +1,6 @@
 import numpy as np
+from collections import deque
+
 import gymnasium as gym
 import random
 import imageio
@@ -61,6 +63,37 @@ def train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, env, max_st
             if terminated or truncated:
                 break
             state = new_state
+
+    return Qtable
+
+def train_mc(n_training_episodes, min_epsilon, max_epsilon, decay_rate, env, max_steps, Qtable):
+    # TODO: not converged, there may exist bug
+    for episode in tqdm(range(n_training_episodes)):
+        epsilon = min_epsilon + (max_epsilon - min_epsilon) * np.exp(decay_rate * episode)
+        state, info = env.reset()
+        terminated, truncated = False, False
+
+        states, actions, rewards = [], [], []
+        for step in range(max_steps):
+            action = epsilon_greedy_policy(Qtable, state, epsilon)
+            new_state, reward, terminated, truncated, _ = env.step(action)
+
+            # save s,a,r for Monte Carlo updating
+            states.append(state)
+            actions.append(action)
+            rewards.append(reward)
+
+            if terminated or truncated:
+                break
+            state = new_state
+
+        returns = deque(maxlen=len(rewards))
+        for t in range(len(rewards))[::-1]:
+            disc_return_t = (returns[0] if len(returns)>0 else 0)
+            returns.appendleft(rewards[t] + gamma * disc_return_t)
+        for state, action, r in zip(states, actions, returns):
+            Qtable[state][action] = Qtable[state][action] + learning_rate * (r - Qtable[state][action])
+
     return Qtable
 
 
@@ -94,7 +127,7 @@ if __name__ == '__main__':
     state_space = env.observation_space.n
     action_space = env.action_space.n
     Qtable_frozenlake = initialize_q_table(state_space, action_space)
-    Qtable_frozenlake = train(n_training_episodes, min_epsilon, max_epsilon, decay_rate, env, max_steps, Qtable_frozenlake)
+    Qtable_frozenlake = train_mc(n_training_episodes, min_epsilon, max_epsilon, decay_rate, env, max_steps, Qtable_frozenlake)
 
     mean_reward, std_reward = evaluate_agent(n_eval_episodes, max_steps, Qtable_frozenlake, eval_seed)
     print(f"Mean_reward={mean_reward:.2f} +/- {std_reward:.2f}")
